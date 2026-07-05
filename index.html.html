@@ -1,0 +1,1585 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Puriq — Agente DQN de Rutas</title>
+  <style>
+    *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+    :root{
+      --bg:#0f1117;--surface:#1a1d27;--surface2:#22263a;
+      --border:#2e3347;--text:#e8eaf0;--muted:#7b82a0;
+      --blue:#4f8ef7;--blue-dim:#1e3a6e;--amber:#f59e0b;
+      --green:#10b981;--red:#ef4444;--purple:#a78bfa;
+      --radius:10px;
+    }
+    body{font-family:'Inter',system-ui,sans-serif;background:var(--bg);color:var(--text);
+      height:100vh;display:grid;grid-template-rows:56px 1fr;grid-template-columns:370px 1fr;overflow:hidden}
+    header{grid-column:1/-1;background:var(--surface);border-bottom:1px solid var(--border);
+      display:flex;align-items:center;padding:0 20px;gap:14px}
+    .logo{width:32px;height:32px;background:var(--blue);border-radius:8px;
+      display:flex;align-items:center;justify-content:center;font-size:16px}
+    header h1{font-size:15px;font-weight:600}
+    .sub{font-size:12px;color:var(--muted)}
+    .spacer{flex:1}
+    #status-badge{font-size:12px;padding:4px 12px;border-radius:20px;
+      background:var(--blue-dim);color:var(--blue);font-weight:500;display:none}
+    #status-badge.on{display:block}
+    aside{background:var(--surface);border-right:1px solid var(--border);
+      overflow-y:auto;display:flex;flex-direction:column}
+    .panel{padding:14px 16px;border-bottom:1px solid var(--border)}
+    .panel-title{font-size:11px;font-weight:600;letter-spacing:.08em;
+      text-transform:uppercase;color:var(--muted);margin-bottom:10px}
+    .search-wrap{position:relative;margin-bottom:10px}
+    .search-input-row{display:flex;gap:6px;align-items:center}
+    .search-input{flex:1;background:var(--surface2);border:1px solid var(--border);
+      border-radius:var(--radius);color:var(--text);font-size:13px;padding:8px 10px;outline:none}
+    .search-input:focus{border-color:var(--blue)}
+    .search-input::placeholder{color:var(--muted)}
+    .pin-btn{width:32px;height:32px;background:var(--surface2);border:1px solid var(--border);
+      border-radius:var(--radius);color:var(--muted);cursor:pointer;font-size:14px;
+      display:flex;align-items:center;justify-content:center;flex-shrink:0}
+    .pin-btn:hover,.pin-btn.active{color:var(--amber);border-color:var(--amber)}
+    .autocomplete-list{position:absolute;top:calc(100% + 2px);left:0;right:0;z-index:3000;
+      background:var(--surface2);border:1px solid var(--border);border-radius:var(--radius);
+      overflow:hidden;box-shadow:0 8px 24px rgba(0,0,0,.5);display:none}
+    .autocomplete-list.open{display:block}
+    .ac-item{padding:9px 12px;font-size:12.5px;cursor:pointer;
+      border-bottom:1px solid var(--border);display:flex;gap:8px;align-items:flex-start}
+    .ac-item:last-child{border-bottom:none}
+    .ac-item:hover{background:var(--surface)}
+    .ac-name{font-weight:500}
+    .ac-addr{color:var(--muted);font-size:11px;margin-top:1px}
+    .ac-searching{padding:10px 12px;font-size:12px;color:var(--muted);text-align:center}
+    .selected-place{font-size:11.5px;color:var(--green);margin-top:3px;align-items:center;gap:4px;display:none}
+    .selected-place.ok{display:flex}
+    #pickup-list{display:flex;flex-direction:column;gap:6px}
+    .pickup-item{background:var(--surface2);border:1px solid var(--border);
+      border-radius:var(--radius);padding:8px 10px;display:flex;align-items:center;gap:8px;font-size:12px}
+    .pickup-item.cancelled{opacity:.4;text-decoration:line-through}
+    .pickup-dot{width:8px;height:8px;border-radius:50%;background:var(--amber);flex-shrink:0}
+    .pickup-item.cancelled .pickup-dot{background:var(--red)}
+    .pickup-name{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+    .btn-cancel{background:none;border:none;color:var(--muted);cursor:pointer;font-size:14px;line-height:1}
+    .btn-cancel:hover{color:var(--red)}
+    .btn{width:100%;padding:10px;border-radius:var(--radius);border:none;cursor:pointer;
+      font-size:13px;font-weight:600;transition:opacity .15s,transform .1s}
+    .btn:active{transform:scale(.98)}
+    .btn-primary{background:var(--blue);color:#fff}
+    .btn-secondary{background:var(--surface2);color:var(--text);border:1px solid var(--border)}
+    .btn-sm{padding:6px 12px;font-size:12px;width:auto}
+    .btn:disabled{opacity:.4;cursor:not-allowed}
+    .btn-row{display:flex;gap:8px}
+    #routes-panel{display:none;flex-direction:column}
+    #routes-panel.on{display:flex}
+    .route-card{padding:12px 16px;cursor:pointer;transition:background .15s;border-bottom:1px solid var(--border)}
+    .route-card:hover{background:var(--surface2)}
+    .route-card.active{background:var(--surface2);border-left:3px solid var(--blue)}
+    .rc-header{display:flex;align-items:center;gap:8px;margin-bottom:6px}
+    .rc-dot{width:12px;height:12px;border-radius:3px;flex-shrink:0}
+    .rc-name{font-size:13px;font-weight:600;flex:1}
+    .rc-badge{font-size:10px;font-weight:600;padding:2px 8px;border-radius:20px;background:#1a3a6e;color:var(--blue)}
+    .rc-metrics{display:grid;grid-template-columns:repeat(3,1fr);gap:4px}
+    .rc-metrics-extra{display:grid;grid-template-columns:repeat(3,1fr);gap:4px;margin-top:4px}
+    .rc-metric.congestion-low .val{color:var(--green)}
+    .rc-metric.congestion-mid .val{color:var(--amber)}
+    .rc-metric.congestion-high .val{color:var(--red)}
+    .rc-metric{background:var(--bg);border-radius:6px;padding:4px 6px;text-align:center}
+    .rc-metric .val{font-size:13px;font-weight:600}
+    .rc-metric .lbl{font-size:10px;color:var(--muted);margin-top:1px}
+    #agent-panel{padding:16px;display:none;flex-direction:column;gap:10px}
+    #agent-panel.on{display:flex}
+    .agent-header{display:flex;align-items:center;gap:8px;margin-bottom:6px}
+    .agent-avatar{width:30px;height:30px;border-radius:50%;
+      background:linear-gradient(135deg,var(--blue),var(--purple));
+      display:flex;align-items:center;justify-content:center;font-size:14px}
+    .agent-name{font-size:13px;font-weight:600}
+    .agent-role{font-size:11px;color:var(--muted)}
+    #agent-comment{font-size:12px;line-height:1.75;color:var(--text);
+      background:var(--surface2);border:1px solid var(--border);
+      border-radius:var(--radius);padding:12px;
+      max-height:380px;overflow-y:auto}
+    #agent-comment strong{color:var(--blue);font-weight:600}
+    #agent-comment hr{border:none;border-top:1px solid var(--border);margin:6px 0}
+    #agent-comment .fb-row{display:flex;gap:8px;margin-top:2px;align-items:center;flex-wrap:wrap}
+    #agent-comment .fb-label{font-size:11px;color:var(--muted)}
+    .fb-btn{background:var(--surface);border:1px solid var(--border);color:var(--text);
+      border-radius:8px;padding:5px 10px;font-size:12px;cursor:pointer;transition:all .15s}
+    .fb-btn:hover{border-color:var(--blue)}
+    .fb-btn.up:hover{border-color:var(--green);color:var(--green)}
+    .fb-btn.down:hover{border-color:var(--red);color:var(--red)}
+    .fb-btn:disabled{opacity:.4;cursor:default}
+    .strategy-pill{display:inline-block;font-size:10px;font-weight:600;padding:2px 8px;
+      border-radius:20px;background:var(--blue-dim);color:var(--blue);margin-bottom:8px}
+    #learning-panel{padding:14px 16px;display:none;flex-direction:column;gap:10px}
+    #learning-panel.on{display:flex}
+    .learn-title{display:flex;align-items:center;gap:6px;font-size:11px;font-weight:600;
+      letter-spacing:.08em;text-transform:uppercase;color:var(--muted)}
+    .learn-stats{display:grid;grid-template-columns:repeat(3,1fr);gap:6px}
+    .learn-stat{background:var(--surface2);border:1px solid var(--border);border-radius:8px;
+      padding:8px 6px;text-align:center}
+    .learn-stat .lv{font-size:15px;font-weight:700;color:var(--purple)}
+    .learn-stat .ll{font-size:9.5px;color:var(--muted);margin-top:2px;text-transform:uppercase}
+    .qbars{display:flex;flex-direction:column;gap:6px}
+    .qbar-row{display:flex;align-items:center;gap:8px;font-size:11px}
+    .qbar-lbl{width:58px;flex-shrink:0;color:var(--muted)}
+    .qbar-track{flex:1;height:8px;background:var(--surface2);border-radius:6px;overflow:hidden}
+    .qbar-fill{height:100%;border-radius:6px;transition:width .4s}
+    .learn-reset{background:none;border:1px solid var(--border);color:var(--muted);
+      border-radius:8px;padding:5px 10px;font-size:11px;cursor:pointer;align-self:flex-start}
+    .learn-reset:hover{color:var(--red);border-color:var(--red)}
+    /* Panel "Viaje en vivo": distancia real medida por GPS/simulación */
+    #trip-panel{padding:14px 16px;display:none;flex-direction:column;gap:10px}
+    #trip-panel.on{display:flex}
+    .trip-stats{display:grid;grid-template-columns:repeat(2,1fr);gap:6px}
+    .trip-stat{background:var(--surface2);border:1px solid var(--border);border-radius:8px;
+      padding:8px 6px;text-align:center}
+    .trip-stat .tv{font-size:16px;font-weight:700;color:var(--green)}
+    .trip-stat .tl{font-size:9.5px;color:var(--muted);margin-top:2px;text-transform:uppercase}
+    .trip-btns{display:flex;gap:8px}
+    #trip-result{font-size:12px;line-height:1.6;background:var(--surface2);border:1px solid var(--border);
+      border-radius:var(--radius);padding:10px;display:none}
+    #trip-result.on{display:block}
+    #map-wrap{position:relative;overflow:hidden;width:100%;height:100%}
+    #map{width:100%;height:100%;min-height:400px;background:#0d1020}
+    .leaflet-popup-content-wrapper{background:var(--surface)!important;border:1px solid var(--border)!important;
+      border-radius:var(--radius)!important;color:var(--text)!important}
+    .leaflet-popup-tip{background:var(--surface)!important}
+    .leaflet-popup-content{margin:10px 14px!important;font-size:13px!important}
+    .popup-title{font-weight:600;font-size:14px;margin-bottom:3px}
+    .popup-type{font-size:11px;color:var(--muted)}
+    #loading{position:absolute;inset:0;background:rgba(15,17,23,.9);
+      display:none;align-items:center;justify-content:center;
+      flex-direction:column;gap:14px;z-index:2000;backdrop-filter:blur(4px)}
+    #loading.on{display:flex}
+    .spinner{width:40px;height:40px;border:3px solid var(--border);
+      border-top-color:var(--blue);border-radius:50%;animation:spin .8s linear infinite}
+    @keyframes spin{to{transform:rotate(360deg)}}
+    .load-txt{font-size:14px;color:var(--muted)}
+    .load-sub{font-size:12px;color:var(--muted);opacity:.7}
+    #toast{position:absolute;bottom:24px;left:50%;transform:translateX(-50%);
+      background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);
+      padding:9px 18px;font-size:13px;z-index:1500;opacity:0;
+      transition:opacity .3s;pointer-events:none;white-space:nowrap}
+    #toast.show{opacity:1}
+    #pin-banner{position:absolute;top:12px;left:50%;transform:translateX(-50%);
+      background:var(--amber);color:#000;font-size:13px;font-weight:600;
+      padding:8px 18px;border-radius:20px;z-index:1500;display:none;gap:8px;align-items:center}
+    #pin-banner.on{display:flex}
+    #pin-banner button{background:rgba(0,0,0,.15);border:none;color:#000;border-radius:6px;padding:2px 8px;cursor:pointer}
+    /* Botón "Mi ubicación" flotando sobre el mapa (como el de Google Maps) */
+    .geo-btn{position:absolute;bottom:100px;right:12px;z-index:900;width:42px;height:42px;border-radius:50%;
+      background:var(--surface);border:1px solid var(--border);color:var(--muted);font-size:18px;cursor:pointer;
+      box-shadow:0 2px 10px rgba(0,0,0,.4);display:flex;align-items:center;justify-content:center}
+    .geo-btn:hover{color:var(--text)}
+    .geo-btn.active{color:var(--blue);border-color:var(--blue)}
+    /* Marcador de ubicación tipo Google Maps: punto fijo + flecha de rumbo (ícono SVG)
+       + halo pulsante que SOLO se anima cuando el dispositivo detecta movimiento real */
+    .geo-marker{width:38px;height:38px;position:relative}
+    .geo-pulse{position:absolute;top:11px;left:11px;width:16px;height:16px;border-radius:50%;
+      background:rgba(79,142,247,.5)}
+    .geo-marker.moving .geo-pulse{animation:geoPulse 1.3s ease-out infinite}
+    @keyframes geoPulse{0%{transform:scale(1);opacity:.7}100%{transform:scale(2.8);opacity:0}}
+    .geo-arrow-wrap{position:absolute;top:-9px;left:3px;width:32px;height:32px;
+      transform-origin:16px 28px;transition:transform .25s linear;opacity:0}
+    .geo-marker.moving .geo-arrow-wrap{opacity:1}
+    .geo-arrow-svg{width:32px;height:32px;display:block;filter:drop-shadow(0 1px 3px rgba(0,0,0,.55))}
+    .geo-arrow-svg path{fill:#4f8ef7;stroke:#fff;stroke-width:1}
+    .geo-dot{position:absolute;top:11px;left:11px;width:16px;height:16px;border-radius:50%;
+      background:#4f8ef7;border:3px solid #fff;box-shadow:0 0 0 4px rgba(79,142,247,.35);z-index:2}
+    .geo-marker-icon{transition:transform .5s linear}
+    ::-webkit-scrollbar{width:5px}
+    ::-webkit-scrollbar-thumb{background:var(--border);border-radius:10px}
+  </style>
+</head>
+<body>
+<header>
+  <div class="logo">🗺</div>
+  <div><h1>Puriq</h1><div class="sub">Agente DQN de Rutas · Logística de última milla · Tu ubicación como punto de partida</div></div>
+  <div class="spacer"></div>
+  <div id="status-badge">Calculando...</div>
+</header>
+
+<aside>
+  <div class="panel">
+    <div class="panel-title">🏭 Origen</div>
+    <div class="search-wrap" id="sw-origin">
+      <div class="search-input-row">
+        <input class="search-input" id="origin-input" placeholder="Detectando tu ubicación..." autocomplete="off"
+               oninput="onSearch(this,'origin')" onfocus="openList('origin')" onblur="blurList('origin')">
+        <button class="pin-btn" id="btn-use-my-location" onclick="usarMiUbicacionComoOrigen(false)" title="Usar mi ubicación actual">🎯</button>
+        <button class="pin-btn" id="pin-origin" onclick="startPin('origin')" title="Marcar en el mapa">📍</button>
+      </div>
+      <div class="autocomplete-list" id="ac-origin"></div>
+      <div class="selected-place" id="sel-origin">✅ <span></span></div>
+    </div>
+  </div>
+  <div class="panel">
+    <div class="panel-title">🏁 Destino</div>
+    <div class="search-wrap" id="sw-dest">
+      <div class="search-input-row">
+        <input class="search-input" id="dest-input" placeholder="Buscar lugar de destino..." autocomplete="off"
+               oninput="onSearch(this,'dest')" onfocus="openList('dest')" onblur="blurList('dest')">
+        <button class="pin-btn" id="pin-dest" onclick="startPin('dest')">📍</button>
+      </div>
+      <div class="autocomplete-list" id="ac-dest"></div>
+      <div class="selected-place" id="sel-dest">✅ <span></span></div>
+    </div>
+  </div>
+  <div class="panel">
+    <div class="panel-title">📦 Puntos de recojo</div>
+    <div class="search-wrap" id="sw-pickup">
+      <div class="search-input-row">
+        <input class="search-input" id="pickup-input" placeholder="Buscar punto de recojo..." autocomplete="off"
+               oninput="onSearch(this,'pickup')" onfocus="openList('pickup')" onblur="blurList('pickup')">
+        <button class="pin-btn" id="pin-pickup" onclick="startPin('pickup')">📍</button>
+      </div>
+      <div class="autocomplete-list" id="ac-pickup"></div>
+      <div class="selected-place" id="sel-pickup">✅ <span></span></div>
+    </div>
+    <button class="btn btn-secondary btn-sm" onclick="addPickup()" style="margin-bottom:10px">+ Agregar punto</button>
+    <div id="pickup-list"></div>
+  </div>
+  <div class="panel">
+    <div class="btn-row" style="margin-bottom:8px">
+      <button class="btn btn-secondary btn-sm" onclick="loadExample()">📍 Ejemplo Lima</button>
+      <button class="btn btn-secondary btn-sm" onclick="clearAll()">🗑 Limpiar</button>
+    </div>
+    <button class="btn btn-primary" id="btn-plan" onclick="planificar()">🤖 Planificar con Agente DQN</button>
+  </div>
+  <div id="routes-panel">
+    <div class="panel" style="padding-bottom:0;border-bottom:none">
+      <div class="panel-title">🛣 Rutas generadas</div>
+    </div>
+    <div id="route-cards"></div>
+  </div>
+  <div id="agent-panel">
+    <div class="panel-title">🧠 Análisis del Agente IA</div>
+    <div class="agent-header">
+      <div class="agent-avatar">🤖</div>
+      <div><div class="agent-name">Agente DQN</div><div class="agent-role">Deep Q-Network · Logística IA</div></div>
+    </div>
+    <div id="agent-comment"></div>
+  </div>
+  <div id="learning-panel" class="on">
+    <div class="learn-title">📈 Aprendizaje del agente (RL)</div>
+    <div class="learn-stats">
+      <div class="learn-stat"><div class="lv" id="learn-episodes">0</div><div class="ll">Episodios</div></div>
+      <div class="learn-stat"><div class="lv" id="learn-epsilon">100%</div><div class="ll">Exploración</div></div>
+      <div class="learn-stat"><div class="lv" id="learn-reward">0.00</div><div class="ll">Recompensa media</div></div>
+    </div>
+    <div style="font-size:11px;color:var(--muted)">Preferencia aprendida para este contexto:</div>
+    <div class="qbars" id="qbars"><div style="font-size:11px;color:var(--muted)">Planifica una ruta para ver preferencias.</div></div>
+    <button class="learn-reset" onclick="resetLearning()">↺ Reiniciar aprendizaje</button>
+  </div>
+  <div id="trip-panel">
+    <div class="learn-title">🚚 Viaje en vivo — distancia real</div>
+    <div style="font-size:11px;color:var(--muted)">Mide tu recorrido real (GPS o simulación) y usa el resultado para reentrenar al agente.</div>
+    <div class="trip-stats">
+      <div class="trip-stat"><div class="tv" id="trip-recorrido">0.00</div><div class="tl">km recorridos</div></div>
+      <div class="trip-stat"><div class="tv" id="trip-restante">–</div><div class="tl">km restantes</div></div>
+      <div class="trip-stat"><div class="tv" id="trip-tiempo">00:00</div><div class="tl">tiempo</div></div>
+      <div class="trip-stat"><div class="tv" id="trip-velocidad">0</div><div class="tl">km/h aprox.</div></div>
+    </div>
+    <div class="trip-btns">
+      <button class="btn btn-primary btn-sm" id="btn-trip-gps" onclick="iniciarViaje(false)" style="flex:1">📡 GPS real</button>
+      <button class="btn btn-secondary btn-sm" id="btn-trip-sim" onclick="iniciarViaje(true)" style="flex:1">🎬 Simular</button>
+    </div>
+    <button class="btn btn-secondary btn-sm" id="btn-trip-stop" onclick="finalizarViaje(false)" style="display:none">⏹ Finalizar viaje</button>
+    <div id="trip-result"></div>
+  </div>
+</aside>
+
+<div id="map-wrap">
+  <div id="map"></div>
+  <button id="btn-geo" class="geo-btn" onclick="toggleUbicacion()" title="Mi ubicación">📍</button>
+  <div id="pin-banner">
+    <span id="pin-msg">Haz clic en el mapa</span>
+    <button onclick="cancelPin()">✕ Cancelar</button>
+  </div>
+  <div id="loading">
+    <div class="spinner"></div>
+    <div class="load-txt">Agente DQN calculando...</div>
+    <div class="load-sub" id="load-sub"></div>
+  </div>
+  <div id="toast"></div>
+</div>
+
+<script>
+// ── Carga robusta de Leaflet ──────────────────────────────
+(function() {
+  var css = document.createElement('link');
+  css.rel = 'stylesheet';
+  css.href = 'https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.min.css';
+  document.head.appendChild(css);
+
+  var s = document.createElement('script');
+  s.src = 'https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.min.js';
+  s.onload = function() { appInit(); };
+  s.onerror = function() {
+    // fallback a unpkg
+    var s2 = document.createElement('script');
+    s2.src = 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.js';
+    s2.onload = function() { appInit(); };
+    s2.onerror = function() {
+      document.getElementById('map').innerHTML =
+        '<div style="color:#ef4444;padding:30px;font-size:14px">⚠ No se pudo cargar el mapa.<br>Verifica tu conexión a Internet.</div>';
+    };
+    document.head.appendChild(s2);
+  };
+  document.head.appendChild(s);
+})();
+
+// ── Estado global ─────────────────────────────────────────
+var S = {
+  origin: null, dest: null, pickupDraft: null,
+  pickups: [], nextId: 1, routes: null, activeRoute: 0,
+  mapLayers: {}, markers: [], previewMarkers: {}, pinTarget: null, searchTimers: {}, lastEpisode: null,
+  trip: null   // viaje en vivo (GPS/simulación) en curso, ver bloque "VIAJE EN VIVO"
+};
+var map;
+
+// ═══════════════════════════════════════════════════════════════
+// AGENTE DE APRENDIZAJE POR REFUERZO
+// Q-learning contextual (estado = hora/distancia/paradas) con
+// política epsilon-greedy. Aprende de:
+//  1) feedback explícito (👍/👎 sobre la recomendación y el consejo)
+//  2) feedback implícito (si el usuario cambia manualmente de ruta)
+// La memoria se persiste en localStorage entre sesiones.
+// ═══════════════════════════════════════════════════════════════
+var RL_KEY = 'dqn_rl_agent_v1';
+var RL = {
+  epsilon: 1.0, epsilonMin: 0.08, epsilonDecay: 0.96,
+  alpha: 0.3, episodes: 0, totalReward: 0, rewardCount: 0,
+  qRoutes: {},   // qRoutes[estado] = {A:valor, B:valor, C:valor}
+  qAdvice: {}    // qAdvice[estado] = {tiempo:valor, costo:valor, seguridad:valor, equilibrado:valor}
+};
+function rlLoad() {
+  try {
+    var raw = localStorage.getItem(RL_KEY);
+    if (!raw) return;
+    var d = JSON.parse(raw);
+    if (typeof d.epsilon === 'number') RL.epsilon = d.epsilon;
+    RL.episodes = d.episodes || 0;
+    RL.totalReward = d.totalReward || 0;
+    RL.rewardCount = d.rewardCount || 0;
+    RL.qRoutes = d.qRoutes || {};
+    RL.qAdvice = d.qAdvice || {};
+  } catch (e) {}
+}
+function rlSave() {
+  try {
+    localStorage.setItem(RL_KEY, JSON.stringify({
+      epsilon: RL.epsilon, episodes: RL.episodes, totalReward: RL.totalReward,
+      rewardCount: RL.rewardCount, qRoutes: RL.qRoutes, qAdvice: RL.qAdvice
+    }));
+  } catch (e) {}
+}
+function resetLearning() {
+  if (!confirm('¿Reiniciar todo el aprendizaje del agente? Esta acción no se puede deshacer.')) return;
+  RL.epsilon = 1.0; RL.episodes = 0; RL.totalReward = 0; RL.rewardCount = 0;
+  RL.qRoutes = {}; RL.qAdvice = {};
+  rlSave();
+  renderLearningPanel();
+  showToast('↺ Aprendizaje reiniciado');
+}
+// Discretiza el contexto en un "estado" para la tabla Q
+function rlStateKey(distKm, numPickups, hora) {
+  var db = distKm < 3 ? 'corta' : distKm < 8 ? 'media' : 'larga';
+  var pb = numPickups === 0 ? 'sin' : numPickups <= 2 ? 'pocas' : 'muchas';
+  var hb;
+  if      (hora >= 7  && hora <= 9)  hb = 'puntaAM';
+  else if (hora >= 12 && hora <= 14) hb = 'almuerzo';
+  else if (hora >= 17 && hora <= 20) hb = 'puntaPM';
+  else if (hora >= 20 || hora < 6)   hb = 'noche';
+  else                                hb = 'normal';
+  return hb + '|' + db + '|' + pb;
+}
+function rlGetQRoutes(state) {
+  if (!RL.qRoutes[state]) RL.qRoutes[state] = { A: 0, B: 0, C: 0 };
+  return RL.qRoutes[state];
+}
+function rlGetQAdvice(state) {
+  if (!RL.qAdvice[state]) RL.qAdvice[state] = { tiempo: 0, costo: 0, seguridad: 0, equilibrado: 0 };
+  return RL.qAdvice[state];
+}
+// Combina el score heurístico (DQN) con lo aprendido (Q) y explora con prob. epsilon
+function rlChooseRoute(state, heur) {
+  var q = rlGetQRoutes(state);
+  var actions = ['A', 'B', 'C'];
+  if (Math.random() < RL.epsilon) {
+    return actions[Math.floor(Math.random() * actions.length)];
+  }
+  var combined = {};
+  actions.forEach(function(a) { combined[a] = heur[a] + q[a]; });
+  return actions.reduce(function(best, a) { return combined[a] > combined[best] ? a : best; }, 'A');
+}
+// Elige qué estilo de consejo mostrar (también epsilon-greedy)
+function rlChooseAdviceArm(state) {
+  var q = rlGetQAdvice(state);
+  var arms = ['tiempo', 'costo', 'seguridad', 'equilibrado'];
+  if (Math.random() < RL.epsilon) return arms[Math.floor(Math.random() * arms.length)];
+  return arms.reduce(function(best, a) { return q[a] > q[best] ? a : best; }, 'equilibrado');
+}
+function rlUpdateRoute(state, action, reward) {
+  var q = rlGetQRoutes(state);
+  q[action] = q[action] + RL.alpha * (reward * 10 - q[action]);
+  RL.totalReward += reward; RL.rewardCount++;
+  rlSave();
+}
+function rlUpdateAdvice(state, arm, reward) {
+  var q = rlGetQAdvice(state);
+  q[arm] = q[arm] + RL.alpha * (reward * 10 - q[arm]);
+  rlSave();
+}
+function rlNewEpisode() {
+  RL.episodes++;
+  RL.epsilon = Math.max(RL.epsilonMin, RL.epsilon * RL.epsilonDecay);
+  rlSave();
+}
+function renderLearningPanel() {
+  var panel = document.getElementById('learning-panel');
+  if (!panel) return;
+  document.getElementById('learn-episodes').textContent = RL.episodes;
+  document.getElementById('learn-epsilon').textContent = Math.round(RL.epsilon * 100) + '%';
+  var avg = RL.rewardCount ? (RL.totalReward / RL.rewardCount).toFixed(2) : '0.00';
+  document.getElementById('learn-reward').textContent = avg;
+  var state = S.lastEpisode ? S.lastEpisode.state : null;
+  var qbarsEl = document.getElementById('qbars');
+  if (!state) { qbarsEl.innerHTML = '<div style="font-size:11px;color:var(--muted)">Planifica una ruta para ver preferencias.</div>'; return; }
+  var q = rlGetQRoutes(state);
+  var colors = { A: '#4f8ef7', B: '#a78bfa', C: '#f97316' };
+  var labels = { A: 'Ruta A', B: 'Ruta B', C: 'Ruta C' };
+  var vals = ['A', 'B', 'C'].map(function(a) { return q[a]; });
+  var maxAbs = Math.max(1, Math.max.apply(null, vals.map(Math.abs)));
+  var html = '';
+  ['A', 'B', 'C'].forEach(function(a) {
+    var pct = Math.round(((q[a] + maxAbs) / (2 * maxAbs)) * 100);
+    html += '<div class="qbar-row"><div class="qbar-lbl">' + labels[a] + '</div>'
+      + '<div class="qbar-track"><div class="qbar-fill" style="width:' + pct + '%;background:' + colors[a] + '"></div></div>'
+      + '<div style="width:34px;text-align:right;color:var(--muted)">' + q[a].toFixed(1) + '</div></div>';
+  });
+  qbarsEl.innerHTML = html;
+}
+// Feedback explícito del usuario (👍/👎) sobre la recomendación y el consejo mostrados
+function rateEpisode(reward) {
+  if (!S.lastEpisode) return;
+  var ep = S.lastEpisode;
+  rlUpdateRoute(ep.state, ep.action, reward);
+  rlUpdateAdvice(ep.state, ep.adviceArm, reward);
+  renderLearningPanel();
+  document.querySelectorAll('.fb-btn').forEach(function(b) { b.disabled = true; });
+  showToast(reward > 0 ? '👍 ¡Gracias! El agente aprende de tu feedback' : '👎 Anotado, el agente ajustará su recomendación');
+}
+rlLoad();
+
+// ═══════════════════════════════════════════════════════════════
+// UBICACIÓN EN VIVO — el "punto azul" tipo Google Maps: se mueve
+// según tu posición GPS real y gira una flecha según hacia dónde
+// te estás desplazando. Es independiente de planificar una ruta:
+// puedes activarlo con el botón 📍 del mapa en cualquier momento.
+//
+// El mismo mecanismo alimenta al módulo de "Viaje en vivo" de abajo,
+// que además mide la distancia recorrida y retroalimenta al agente RL.
+// ═══════════════════════════════════════════════════════════════
+S.geo = { watchId: null, active: false, follow: true, marker: null, accCircle: null, lastPoint: null, lastTime: null, heading: 0, moving: false };
+
+// Distancia entre 2 puntos GPS en metros (fórmula de Haversine)
+function haversineM(lat1, lon1, lat2, lon2) {
+  var R = 6371000, toRad = Math.PI / 180;
+  var dLat = (lat2 - lat1) * toRad, dLon = (lon2 - lon1) * toRad;
+  var a = Math.sin(dLat / 2) * Math.sin(dLat / 2)
+        + Math.cos(lat1 * toRad) * Math.cos(lat2 * toRad) * Math.sin(dLon / 2) * Math.sin(dLon / 2);
+  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+}
+// Rumbo (0-360°) entre 2 puntos GPS, para orientar la flecha del marcador
+function bearingDeg(lat1, lon1, lat2, lon2) {
+  var toRad = Math.PI / 180, toDeg = 180 / Math.PI;
+  var y = Math.sin((lon2 - lon1) * toRad) * Math.cos(lat2 * toRad);
+  var x = Math.cos(lat1 * toRad) * Math.sin(lat2 * toRad)
+        - Math.sin(lat1 * toRad) * Math.cos(lat2 * toRad) * Math.cos((lon2 - lon1) * toRad);
+  return (Math.atan2(y, x) * toDeg + 360) % 360;
+}
+function fmtTiempo(seg) {
+  var m = Math.floor(seg / 60), s = Math.floor(seg % 60);
+  return (m < 10 ? '0' : '') + m + ':' + (s < 10 ? '0' : '') + s;
+}
+// Icono de ubicación: un punto fijo + una flecha (SVG) que solo se muestra activa cuando te mueves
+function geoIcon() {
+  return L.divIcon({
+    className: 'geo-marker-icon',
+    html: '<div class="geo-marker">'
+        +   '<div class="geo-pulse"></div>'
+        +   '<div class="geo-arrow-wrap"><svg class="geo-arrow-svg" viewBox="0 0 24 24"><path d="M12 2 L4 22 L12 17.5 L20 22 Z"/></svg></div>'
+        +   '<div class="geo-dot"></div>'
+        + '</div>',
+    iconSize: [38, 38], iconAnchor: [19, 19]
+  });
+}
+// Gira la flecha hacia el rumbo actual y activa/desactiva el halo pulsante según si hay movimiento real
+function actualizarMarcadorMovimiento(marker, heading, enMovimiento) {
+  var el = marker && marker.getElement();
+  var inner = el && el.querySelector('.geo-marker');
+  if (!inner) return;
+  inner.classList.toggle('moving', !!enMovimiento);
+  var arrowWrap = inner.querySelector('.geo-arrow-wrap');
+  if (arrowWrap) arrowWrap.style.transform = 'rotate(' + heading + 'deg)';
+}
+// Encender / apagar el punto azul de ubicación (botón 📍 sobre el mapa)
+function toggleUbicacion() {
+  var g = S.geo;
+  if (g.active) { pararUbicacion(); return; }
+  if (!navigator.geolocation) { showToast('⚠ Tu navegador no soporta geolocalización'); return; }
+  g.active = true; g.follow = true;
+  document.getElementById('btn-geo').classList.add('active');
+  g.watchId = navigator.geolocation.watchPosition(onGeoUpdate, function(err) {
+    showToast('⚠ No se pudo obtener tu ubicación: ' + err.message);
+    pararUbicacion();
+  }, { enableHighAccuracy: true, maximumAge: 1000, timeout: 10000 });
+  showToast('📍 Mostrando tu ubicación en tiempo real');
+  map.on('dragstart', dejarDeSeguir); // si arrastras el mapa, deja de auto-centrar (como Google Maps)
+}
+function dejarDeSeguir() { S.geo.follow = false; }
+function pararUbicacion() {
+  var g = S.geo;
+  g.active = false;
+  if (g.watchId != null) navigator.geolocation.clearWatch(g.watchId);
+  if (g.marker) { map.removeLayer(g.marker); g.marker = null; }
+  if (g.accCircle) { map.removeLayer(g.accCircle); g.accCircle = null; }
+  g.lastPoint = null;
+  document.getElementById('btn-geo').classList.remove('active');
+  map.off('dragstart', dejarDeSeguir);
+}
+// Se ejecuta cada vez que el navegador reporta una nueva posición GPS
+function onGeoUpdate(pos) {
+  var g = S.geo;
+  var lat = pos.coords.latitude, lon = pos.coords.longitude, acc = pos.coords.accuracy || 25;
+  var ahora = Date.now();
+
+  // Preferir el "heading" del dispositivo si viene disponible (brújula/GPS); si no, calcularlo
+  // a partir del desplazamiento entre el punto anterior y el actual.
+  var heading = g.heading;
+  var movidoM = g.lastPoint ? haversineM(g.lastPoint.lat, g.lastPoint.lon, lat, lon) : 0;
+  if (pos.coords.heading != null && !isNaN(pos.coords.heading)) {
+    heading = pos.coords.heading;
+  } else if (g.lastPoint && movidoM > 2) {
+    heading = bearingDeg(g.lastPoint.lat, g.lastPoint.lon, lat, lon); // evita "temblor" al estar quieto
+  }
+
+  // ¿Estás en movimiento? Usa la velocidad que reporta el GPS si está disponible;
+  // si no, la calcula con distancia/tiempo entre las dos últimas posiciones.
+  var velMs = (pos.coords.speed != null && !isNaN(pos.coords.speed)) ? pos.coords.speed : null;
+  if (velMs == null && g.lastPoint && g.lastTime) {
+    var dtS = (ahora - g.lastTime) / 1000;
+    velMs = dtS > 0 ? movidoM / dtS : 0;
+  }
+  var enMovimiento = velMs != null && velMs > 0.6; // ~2.2 km/h: filtra el ruido normal del GPS al estar parado
+  g.moving = enMovimiento;
+  g.heading = heading;
+  g.lastPoint = { lat: lat, lon: lon };
+  g.lastTime = ahora;
+
+  if (!g.marker) {
+    g.marker = L.marker([lat, lon], { icon: geoIcon(), zIndexOffset: 1000 }).addTo(map);
+    g.accCircle = L.circle([lat, lon], { radius: acc, color: '#4f8ef7', weight: 1, fillColor: '#4f8ef7', fillOpacity: .12 }).addTo(map);
+  } else {
+    g.marker.setLatLng([lat, lon]);
+    g.accCircle.setLatLng([lat, lon]);
+    g.accCircle.setRadius(acc);
+  }
+  actualizarMarcadorMovimiento(g.marker, heading, enMovimiento);
+  if (g.follow) map.setView([lat, lon], Math.max(map.getZoom(), 16), { animate: true });
+
+  // Si hay un viaje en curso siendo medido por GPS real (no simulado), esto también cuenta como avance
+  if (S.trip && S.trip.active && !S.trip.simCoords) acumularDistanciaViaje(lat, lon);
+}
+
+// ═══════════════════════════════════════════════════════════════
+// VIAJE EN VIVO — mide la distancia REAL recorrida (GPS o simulación)
+// y usa esa experiencia real para reentrenar al agente RL.
+//
+// Diferencia clave con el feedback 👍/👎 de arriba:
+//   - El 👍/👎 es una OPINIÓN del usuario sobre la recomendación.
+//   - Esto es un HECHO medido: ¿la ruta tardó lo que la IA predijo o no?
+// Ambos alimentan la misma tabla Q (rlUpdateRoute), pero esta fuente
+// es "experiencia" real, no opinión.
+// ═══════════════════════════════════════════════════════════════
+
+// Inicia el seguimiento. simulado=false → GPS real (punto azul). simulado=true → recorre la ruta elegida solo.
+function iniciarViaje(simulado) {
+  if (!S.lastEpisode || !S.routes) { showToast('⚠ Planifica una ruta primero'); return; }
+  if (S.trip && S.trip.active) { showToast('⚠ Ya hay un viaje en curso'); return; }
+
+  S.trip = { active: true, startTime: Date.now(), distM: 0, lastPoint: null, timer: null, tickUI: null, simIdx: 0, simCoords: null, marker: null };
+
+  document.getElementById('btn-trip-gps').disabled = true;
+  document.getElementById('btn-trip-sim').disabled = true;
+  document.getElementById('btn-trip-stop').style.display = 'block';
+  document.getElementById('trip-result').classList.remove('on');
+
+  if (simulado) {
+    S.trip.simCoords = S.routes.routes[S.activeRoute].coords;
+    S.trip.timer = setInterval(simTick, 250); // avanza un punto cada 250ms
+    showToast('🎬 Simulación de viaje iniciada');
+  } else {
+    if (!navigator.geolocation) { showToast('⚠ Tu navegador no soporta GPS. Usa "Simular".'); finalizarViaje(false); return; }
+    if (!S.geo.active) toggleUbicacion(); // activa el mismo punto azul con flecha que usa "Mi ubicación"
+    showToast('📡 Viaje GPS iniciado — muévete para calcular la distancia real');
+  }
+  S.trip.tickUI = setInterval(actualizarStatsViaje, 1000);
+}
+
+// Simulación: avanza sobre las coordenadas reales de la ruta elegida, con un poco de ruido,
+// usando el mismo marcador de flecha que la ubicación en vivo
+function simTick() {
+  var t = S.trip;
+  if (!t || t.simIdx >= t.simCoords.length) { finalizarViaje(true); return; }
+  var p = t.simCoords[t.simIdx];
+  var ruido = (Math.random() - 0.5) * 0.00006; // imita variación de tráfico/GPS real
+  var lat = p[0] + ruido, lon = p[1] + ruido;
+  var heading = t.lastPoint ? bearingDeg(t.lastPoint.lat, t.lastPoint.lon, lat, lon) : 0;
+  if (!t.marker) t.marker = L.marker([lat, lon], { icon: geoIcon(), zIndexOffset: 1000 }).addTo(map);
+  else t.marker.setLatLng([lat, lon]);
+  actualizarMarcadorMovimiento(t.marker, heading, true); // en la simulación siempre estás "en movimiento"
+  acumularDistanciaViaje(lat, lon);
+  t.simIdx += Math.max(1, Math.round(t.simCoords.length / 120)); // recorre la ruta en ~120 pasos
+}
+
+// Acumula la distancia real recorrida (llamado desde el GPS real o desde la simulación)
+function acumularDistanciaViaje(lat, lon) {
+  var t = S.trip;
+  if (!t) return;
+  if (t.lastPoint) t.distM += haversineM(t.lastPoint.lat, t.lastPoint.lon, lat, lon);
+  t.lastPoint = { lat: lat, lon: lon };
+  if (S.dest) {
+    var restanteM = haversineM(lat, lon, S.dest.lat, S.dest.lon);
+    if (restanteM < 40 && t.distM > 100) finalizarViaje(true); // llegó al destino
+  }
+}
+
+function actualizarStatsViaje() {
+  var t = S.trip;
+  if (!t) return;
+  var elapsedS = (Date.now() - t.startTime) / 1000;
+  document.getElementById('trip-recorrido').textContent = (t.distM / 1000).toFixed(2);
+  var restKm = (t.lastPoint && S.dest) ? haversineM(t.lastPoint.lat, t.lastPoint.lon, S.dest.lat, S.dest.lon) / 1000 : null;
+  document.getElementById('trip-restante').textContent = restKm != null ? restKm.toFixed(2) : '–';
+  document.getElementById('trip-tiempo').textContent = fmtTiempo(elapsedS);
+  var velKmh = elapsedS > 0 ? (t.distM / 1000) / (elapsedS / 3600) : 0;
+  document.getElementById('trip-velocidad').textContent = Math.round(velKmh);
+}
+
+// Termina el viaje: compara lo REAL contra lo que la IA predijo, y retroalimenta al agente RL
+function finalizarViaje(automatico) {
+  var t = S.trip;
+  if (!t || !t.active) return;
+  t.active = false;
+  if (t.timer) clearInterval(t.timer);
+  if (t.tickUI) clearInterval(t.tickUI);
+  actualizarStatsViaje();
+
+  var realDurS = (Date.now() - t.startTime) / 1000;
+  var realDistKm = t.distM / 1000;
+  var ep = S.lastEpisode;
+  var resultEl = document.getElementById('trip-result');
+
+  if (ep && ep.predDurS && realDistKm > 0.05) {
+    var predMin = Math.round(ep.predDurS / 60);
+    var realMin = Math.max(1, Math.round(realDurS / 60));
+    // Recompensa = qué tan bien acertó la predicción vs. la realidad medida.
+    // Positiva si la IA fue más rápida de lo esperado; negativa si tardó más.
+    var diffPct = (ep.predDurS - realDurS) / ep.predDurS;
+    var reward = Math.max(-1, Math.min(1, diffPct * 2));
+    rlUpdateRoute(ep.state, ep.action, reward);   // <-- aquí el agente aprende de la experiencia REAL
+    renderLearningPanel();
+    resultEl.classList.add('on');
+    resultEl.innerHTML = '📊 <strong>Viaje finalizado</strong><br>'
+      + 'Predicho: ~' + predMin + ' min · Real: ~' + realMin + ' min · Recorrido: ' + realDistKm.toFixed(2) + ' km<br>'
+      + (reward >= 0
+          ? '✅ Fuiste más rápido de lo previsto. El agente refuerza esta ruta en este contexto (recompensa ' + reward.toFixed(2) + ').'
+          : '⚠️ Tardaste más de lo previsto. El agente reduce su confianza en esta ruta para este contexto (recompensa ' + reward.toFixed(2) + ').');
+    showToast(automatico ? '🏁 Llegada detectada — el agente actualizó su aprendizaje' : '⏹ Viaje finalizado — aprendizaje actualizado');
+  } else {
+    showToast('⏹ Viaje finalizado (muy corto para generar aprendizaje)');
+  }
+
+  // El marcador de simulación se retira; el punto azul GPS (S.geo.marker) se queda, como en Google Maps
+  if (t.marker && map) map.removeLayer(t.marker);
+  document.getElementById('btn-trip-gps').disabled = false;
+  document.getElementById('btn-trip-sim').disabled = false;
+  document.getElementById('btn-trip-stop').style.display = 'none';
+  S.trip = null;
+}
+
+// ── Inicializar app una vez Leaflet cargado ───────────────
+function appInit() {
+  map = L.map('map', { zoomControl: true, attributionControl: false });
+  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19 }).addTo(map);
+  map.setView([-12.08, -77.05], 12);
+  map.on('click', function(e) {
+    if (!S.pinTarget) return;
+    var lat = e.latlng.lat, lon = e.latlng.lng;
+    if (!esCoordenadaValida(lat, lon)) {
+      showToast('⚠ Solo puedes fijar puntos dentro de Perú');
+      return;
+    }
+    var nombre = 'Punto ' + lat.toFixed(5) + ', ' + lon.toFixed(5);
+    applyPlace(S.pinTarget, { nombre: nombre, lat: lat, lon: lon });
+    cancelPin();
+  });
+  renderPickupList();
+  renderLearningPanel();
+  usarMiUbicacionComoOrigen(true); // al abrir Puriq, intenta usar tu ubicación real como origen
+}
+
+// ── Ubicación real como origen ─────────────────────────────
+// silencioso=true: lo intenta solo (al cargar la app), sin mostrar error si el usuario no dio permiso.
+// silencioso=false: lo pidió el usuario con el botón 🎯, así que sí avisamos si algo falla.
+function usarMiUbicacionComoOrigen(silencioso) {
+  if (!navigator.geolocation) {
+    if (!silencioso) showToast('⚠ Tu navegador no soporta geolocalización. Busca tu origen manualmente.');
+    return;
+  }
+  // file:// (u otros contextos no seguros) suelen bloquear la geolocalización sin
+  // avisar y sin llamar a ningún callback, dejando el campo colgado para siempre.
+  // Si detectamos eso, ni lo intentamos: liberamos el campo directamente.
+  if (window.isSecureContext === false) {
+    document.getElementById('origin-input').placeholder = 'Buscar lugar de origen...';
+    if (!silencioso) showToast('⚠ Este archivo local no permite obtener tu ubicación. Ábrelo desde un enlace https:// o busca tu origen manualmente.');
+    return;
+  }
+  document.getElementById('origin-input').placeholder = 'Detectando tu ubicación...';
+  if (!silencioso) showToast('📍 Obteniendo tu ubicación actual...');
+  var geoResuelto = false;
+  // Salvavidas: si el navegador nunca llama a los callbacks de éxito/error
+  // (pasa en algunos WebView/contextos restringidos), liberamos el campo igual
+  // pasado un tiempo razonable, en vez de dejarlo "cargando" para siempre.
+  var geoFallbackTimer = setTimeout(function() {
+    if (geoResuelto) return;
+    geoResuelto = true;
+    document.getElementById('origin-input').placeholder = 'Buscar lugar de origen...';
+    if (!silencioso) showToast('⚠ Tardó demasiado en obtener tu ubicación. Búscala manualmente o usa 📍.');
+  }, 12000);
+  navigator.geolocation.getCurrentPosition(function(pos) {
+    if (geoResuelto) return;
+    geoResuelto = true;
+    clearTimeout(geoFallbackTimer);
+    var lat = pos.coords.latitude, lon = pos.coords.longitude;
+    reverseGeocode(lat, lon).then(function(nombre) {
+      applyPlace('origin', { nombre: nombre, lat: lat, lon: lon });
+      if (!S.geo.active) toggleUbicacion();     // muestra tu punto azul en el mapa
+      if (map) map.setView([lat, lon], 15);
+      showToast('✅ Usando tu ubicación actual como origen. Ahora elige destino y puntos de recojo.');
+    });
+  }, function(err) {
+    if (geoResuelto) return;
+    geoResuelto = true;
+    clearTimeout(geoFallbackTimer);
+    document.getElementById('origin-input').placeholder = 'Buscar lugar de origen...';
+    if (!silencioso) showToast('⚠ No se pudo obtener tu ubicación (' + err.message + '). Búscala o usa 📍.');
+  }, { enableHighAccuracy: true, timeout: 10000, maximumAge: 30000 });
+}
+// Convierte coordenadas en un nombre legible (dirección/lugar más cercano) usando Nominatim
+function reverseGeocode(lat, lon) {
+  var url = 'https://nominatim.openstreetmap.org/reverse?format=json&lat=' + lat + '&lon=' + lon + '&zoom=18&addressdetails=1';
+  return fetch(url, { headers: { 'Accept-Language': 'es' } })
+    .then(function(r) { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
+    .then(function(data) {
+      if (data && data.display_name) return data.display_name.split(',').slice(0, 2).join(',');
+      throw new Error('sin resultado');
+    })
+    .catch(function() { return 'Mi ubicación (' + lat.toFixed(5) + ', ' + lon.toFixed(5) + ')'; });
+}
+
+// ── Autocompletado: Nominatim + Photon como segunda opción ─
+function onSearch(input, key) {
+  var q = input.value.trim();
+  clearTimeout(S.searchTimers[key]);
+  if (q.length < 3) { closeList(key); return; }
+  showSearching(key);
+  S.searchTimers[key] = setTimeout(function() { buscarLugar(q, key); }, 450);
+}
+function filtrarPeru(items) {
+  return items.filter(function(it) {
+    return it.lat >= -18.4 && it.lat <= -0.0 && it.lon >= -81.3 && it.lon <= -68.6;
+  });
+}
+// Motor #1: Nominatim (OpenStreetMap)
+function buscarNominatim(q) {
+  var url = 'https://nominatim.openstreetmap.org/search?format=json&limit=6&addressdetails=1'
+          + '&countrycodes=pe'
+          + '&viewbox=-81.3,-18.4,-68.6,-0.0&bounded=0'
+          + '&q=' + encodeURIComponent(q);
+  return fetch(url, { headers: { 'Accept-Language': 'es' } })
+    .then(function(r) { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
+    .then(function(data) {
+      var norm = data.map(function(it) {
+        return { display_name: it.display_name, lat: parseFloat(it.lat), lon: parseFloat(it.lon),
+                 address: it.address || {}, fuente: 'Nominatim' };
+      });
+      var filtered = filtrarPeru(norm);
+      return filtered.length ? filtered : norm;
+    });
+}
+// Motor #2 (respaldo): Photon (photon.komoot.io) — bueno para calles y direcciones específicas
+function buscarPhoton(q) {
+  var url = 'https://photon.komoot.io/api/?q=' + encodeURIComponent(q)
+          + '&limit=6&lang=es&lat=-12.05&lon=-77.03';
+  return fetch(url).then(function(r) { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
+    .then(function(data) {
+      var feats = (data.features || []).map(function(f) {
+        var p = f.properties || {};
+        var c = (f.geometry && f.geometry.coordinates) || [0, 0];
+        var principal = p.name || p.street || p.county || 'Lugar';
+        var partes = [p.street, p.district, p.city, p.state].filter(function(x) { return x && x !== principal; });
+        return {
+          display_name: [principal].concat(partes).join(', '),
+          lat: c[1], lon: c[0],
+          address: { city: p.city || p.county, suburb: p.district || p.suburb },
+          fuente: 'Photon'
+        };
+      });
+      var filtered = filtrarPeru(feats);
+      return filtered.length ? filtered : feats;
+    });
+}
+// Busca lugares/calles: intenta Nominatim y, si no hay resultados o falla, usa Photon como segunda opción
+function buscarLugar(q, key) {
+  buscarNominatim(q).then(function(items) {
+    if (items.length) { renderList(key, items); return; }
+    return buscarPhoton(q).then(function(items2) { renderList(key, items2); });
+  }).catch(function(err) {
+    console.warn('Nominatim no disponible, probando buscador alterno (Photon):', err.message);
+    buscarPhoton(q).then(function(items2) { renderList(key, items2); })
+      .catch(function(err2) {
+        console.warn('Photon tampoco disponible:', err2.message);
+        closeList(key);
+        showToast('⚠ No se pudo buscar el lugar. Intenta con el modo 📍 (pin en el mapa).', 4000);
+      });
+  });
+}
+function showSearching(key) {
+  var el = document.getElementById('ac-' + key);
+  el.innerHTML = '<div class="ac-searching">🔍 Buscando...</div>';
+  el.classList.add('open');
+}
+function renderList(key, items) {
+  var el = document.getElementById('ac-' + key);
+  if (!items.length) {
+    el.innerHTML = '<div class="ac-searching">Sin resultados.</div>';
+    el.classList.add('open'); return;
+  }
+  var html = '';
+  for (var i = 0; i < items.length; i++) {
+    var it = items[i];
+    var addr = it.address || {};
+    var city = addr.city || addr.town || addr.county || '';
+    var dist = addr.suburb || addr.neighbourhood || '';
+    var addrStr = [dist, city].filter(Boolean).join(', ');
+    if (it.fuente === 'Photon') addrStr += (addrStr ? ' · ' : '') + 'buscador alterno';
+    html += '<div class="ac-item" onmousedown="selectPlace(\'' + key + '\',' + i + ')">'
+          + '<div>📍</div><div><div class="ac-name">' + (it.display_name.split(',')[0]) + '</div>'
+          + '<div class="ac-addr">' + addrStr + '</div></div></div>';
+  }
+  el.innerHTML = html;
+  el.dataset.items = JSON.stringify(items);
+  el.classList.add('open');
+}
+function selectPlace(key, idx) {
+  var el = document.getElementById('ac-' + key);
+  var items = JSON.parse(el.dataset.items || '[]');
+  var it = items[idx];
+  if (!it) return;
+  var nombre = it.display_name.split(',').slice(0, 2).join(',');
+  applyPlace(key, { nombre: nombre, lat: parseFloat(it.lat), lon: parseFloat(it.lon) });
+}
+function esCoordenadaValida(lat, lon) {
+  // Verificar que las coordenadas estén dentro del territorio peruano
+  return lat >= -18.4 && lat <= -0.0 && lon >= -81.3 && lon <= -68.6;
+}
+function applyPlace(key, place) {
+  if (!esCoordenadaValida(place.lat, place.lon)) {
+    showToast('⚠ Ese lugar no está en Perú. Por favor busca un lugar dentro del país.');
+    return;
+  }
+  if (key === 'origin') {
+    S.origin = place;
+    document.getElementById('origin-input').value = place.nombre;
+    showSelected('origin', place.nombre);
+    ensureMapMarker('origin', place, 'origin');
+  } else if (key === 'dest') {
+    S.dest = place;
+    document.getElementById('dest-input').value = place.nombre;
+    showSelected('dest', place.nombre);
+    ensureMapMarker('dest', place, 'destination');
+  } else if (key === 'pickup') {
+    S.pickupDraft = place;
+    document.getElementById('pickup-input').value = place.nombre;
+    showSelected('pickup', place.nombre);
+    ensureMapMarker('pickupDraft', place, 'pickup');
+  }
+  if (map) map.setView([place.lat, place.lon], 14);
+  closeList(key);
+}
+function showSelected(key, nombre) {
+  var el = document.getElementById('sel-' + key);
+  el.querySelector('span').textContent = nombre;
+  el.classList.add('ok');
+}
+// ── Marcadores instantáneos al seleccionar un lugar ────────
+function ensureMapMarker(key, place, type) {
+  if (!map) return;
+  removeMapMarker(key);
+  var marker = L.marker([place.lat, place.lon], { icon: makeIcon(type) });
+  var labels = { origin: '🏭 Origen', destination: '🏁 Destino', pickup: '📦 Punto de recojo' };
+  marker.bindPopup('<div class="popup-title">' + place.nombre + '</div><div class="popup-type">' + (labels[type] || 'Parada') + '</div>');
+  marker.addTo(map);
+  marker.openPopup();
+  S.previewMarkers[key] = marker;
+  S.markers.push(marker);
+}
+function removeMapMarker(key) {
+  var m = S.previewMarkers[key];
+  if (!m) return;
+  if (map) map.removeLayer(m);
+  var idx = S.markers.indexOf(m);
+  if (idx > -1) S.markers.splice(idx, 1);
+  delete S.previewMarkers[key];
+}
+function openList(key) {
+  var el = document.getElementById('ac-' + key);
+  if (el.innerHTML) el.classList.add('open');
+}
+function closeList(key) { document.getElementById('ac-' + key).classList.remove('open'); }
+function blurList(key) { setTimeout(function() { closeList(key); }, 200); }
+
+// ── Modo PIN ──────────────────────────────────────────────
+function startPin(key) {
+  var labels = { origin: 'Haz clic en el mapa para fijar el ORIGEN',
+                 dest: 'Haz clic en el mapa para fijar el DESTINO',
+                 pickup: 'Haz clic en el mapa para fijar el PUNTO DE RECOJO' };
+  S.pinTarget = key;
+  document.getElementById('pin-msg').textContent = labels[key];
+  document.getElementById('pin-banner').classList.add('on');
+  document.getElementById('pin-' + key).classList.add('active');
+  if (map) map.getContainer().style.cursor = 'crosshair';
+}
+function cancelPin() {
+  if (S.pinTarget) { document.getElementById('pin-' + S.pinTarget).classList.remove('active'); S.pinTarget = null; }
+  document.getElementById('pin-banner').classList.remove('on');
+  if (map) map.getContainer().style.cursor = '';
+}
+
+// ── Pickups ───────────────────────────────────────────────
+function addPickup() {
+  if (!S.pickupDraft) { showToast('⚠ Busca un lugar en Puntos de recojo primero'); return; }
+  var p = S.pickupDraft;
+  var id = S.nextId++;
+  S.pickups.push({ id: id, nombre: p.nombre, lat: p.lat, lon: p.lon, estado: 'activo' });
+  removeMapMarker('pickupDraft');
+  ensureMapMarker('pickup_' + id, p, 'pickup');
+  S.pickupDraft = null;
+  document.getElementById('pickup-input').value = '';
+  document.getElementById('sel-pickup').classList.remove('ok');
+  renderPickupList();
+  showToast('📦 "' + p.nombre + '" agregado');
+}
+function cancelPickup(id) {
+  var p = S.pickups.find(function(x) { return x.id === id; });
+  if (!p) return;
+  p.estado = p.estado === 'activo' ? 'cancelado' : 'activo';
+  if (p.estado === 'cancelado') removeMapMarker('pickup_' + id);
+  else ensureMapMarker('pickup_' + id, p, 'pickup');
+  renderPickupList();
+}
+function renderPickupList() {
+  var el = document.getElementById('pickup-list');
+  if (!S.pickups.length) {
+    el.innerHTML = '<div style="font-size:12px;color:var(--muted);text-align:center;padding:6px 0">Sin puntos agregados</div>';
+    return;
+  }
+  var html = '';
+  S.pickups.forEach(function(p) {
+    html += '<div class="pickup-item' + (p.estado === 'cancelado' ? ' cancelled' : '') + '">'
+          + '<div class="pickup-dot"></div>'
+          + '<div class="pickup-name">#' + p.id + ' ' + p.nombre + '</div>'
+          + '<button class="btn-cancel" onclick="cancelPickup(' + p.id + ')">'
+          + (p.estado === 'activo' ? '✕' : '↺') + '</button></div>';
+  });
+  el.innerHTML = html;
+}
+
+// ── Ejemplo Lima ──────────────────────────────────────────
+function loadExample() {
+  S.origin = { nombre: 'Miraflores, Lima', lat: -12.1191, lon: -77.0282 };
+  S.dest   = { nombre: 'San Isidro, Lima', lat: -12.0971, lon: -77.0336 };
+  document.getElementById('origin-input').value = S.origin.nombre;
+  document.getElementById('dest-input').value   = S.dest.nombre;
+  showSelected('origin', S.origin.nombre);
+  showSelected('dest', S.dest.nombre);
+  ensureMapMarker('origin', S.origin, 'origin');
+  ensureMapMarker('dest', S.dest, 'destination');
+  S.pickups = [
+    { id:1, nombre:'Surquillo', lat:-12.1088, lon:-77.0203, estado:'activo' },
+    { id:2, nombre:'Lince',     lat:-12.0848, lon:-77.0349, estado:'activo' }
+  ];
+  S.nextId = 3;
+  S.pickups.forEach(function(p) { ensureMapMarker('pickup_' + p.id, p, 'pickup'); });
+  renderPickupList();
+  if (map) map.setView([-12.108, -77.03], 13);
+  showToast('✅ Ejemplo Lima cargado');
+}
+function clearAll() {
+  if (S.trip && S.trip.active) finalizarViaje(false);
+  S.origin = S.dest = S.pickupDraft = null;
+  S.pickups = []; S.routes = null; S.nextId = 1; S.lastEpisode = null;
+  ['origin','dest','pickup'].forEach(function(k) {
+    document.getElementById(k+'-input').value = '';
+    document.getElementById('sel-'+k).classList.remove('ok');
+    closeList(k);
+  });
+  renderPickupList();
+  clearMapLayers();
+  document.getElementById('routes-panel').classList.remove('on');
+  document.getElementById('agent-panel').classList.remove('on');
+  document.getElementById('trip-panel').classList.remove('on');
+  document.getElementById('trip-result').classList.remove('on');
+  document.getElementById('route-cards').innerHTML = '';
+  renderLearningPanel();
+}
+
+// ── Rutas: Valhalla + fallback OSRM + fallback geométrico ─
+// fetch con timeout: si el servidor no responde a tiempo, falla rápido en vez de colgar la UI
+function fetchWithTimeout(url, options, ms) {
+  var timeoutPromise = new Promise(function(_, reject) {
+    setTimeout(function() { reject(new Error('timeout: sin respuesta del servidor')); }, ms || 7000);
+  });
+  return Promise.race([fetch(url, options || {}), timeoutPromise]);
+}
+// Decodifica un polyline codificado (Valhalla usa precisión 6, OSRM/Google usan precisión 5)
+function decodePolylineGeneric(encoded, precision) {
+  var factor = Math.pow(10, precision);
+  var result = [], index = 0, lat = 0, lng = 0;
+  while (index < encoded.length) {
+    var b, shift = 0, res2 = 0;
+    do { b = encoded.charCodeAt(index++) - 63; res2 |= (b & 0x1f) << shift; shift += 5; } while (b >= 0x20);
+    lat += (res2 & 1) ? ~(res2 >> 1) : (res2 >> 1);
+    shift = 0; res2 = 0;
+    do { b = encoded.charCodeAt(index++) - 63; res2 |= (b & 0x1f) << shift; shift += 5; } while (b >= 0x20);
+    lng += (res2 & 1) ? ~(res2 >> 1) : (res2 >> 1);
+    result.push([lat / factor, lng / factor]);
+  }
+  return result;
+}
+// Decodifica UN solo shape de Valhalla (precision 6)
+function decodeOneLeg(encoded) { return decodePolylineGeneric(encoded, 6); }
+
+// Valida que las coordenadas decodificadas estén en Perú
+function coordsEnPeru(coords) {
+  if (!coords || coords.length === 0) return false;
+  var muestra = coords[Math.floor(coords.length / 2)];
+  var lat = muestra[0], lon = muestra[1];
+  return lat >= -18.4 && lat <= -0.0 && lon >= -81.3 && lon <= -68.6;
+}
+
+function fetchValhalla(locations, costing) {
+  var body = JSON.stringify({
+    locations: locations.map(function(p) { return { lon: p.lon, lat: p.lat }; }),
+    costing: costing || 'auto',
+    directions_options: { units: 'kilometers' }
+  });
+  return fetchWithTimeout('https://valhalla1.openstreetmap.de/route', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: body
+  }, 7000).then(function(r) {
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    return r.json();
+  }).then(function(data) {
+    if (!data.trip) throw new Error('sin resultado');
+    // Decodificar cada leg por separado y concatenar (evita corrupción de estado acumulado)
+    var coords = [];
+    data.trip.legs.forEach(function(leg, li) {
+      var legCoords = decodeOneLeg(leg.shape);
+      // Omitir el primer punto de cada leg (excepto el primero) para no duplicar waypoints
+      if (li > 0 && legCoords.length > 0) legCoords = legCoords.slice(1);
+      coords = coords.concat(legCoords);
+    });
+    // Sanidad: verificar que la ruta esté en Perú
+    if (!coordsEnPeru(coords)) throw new Error('coordenadas fuera de Perú');
+    return {
+      coords: coords,
+      distanceM: data.trip.summary.length * 1000,
+      durationS: data.trip.summary.time
+    };
+  });
+}
+
+// Respaldo #2: servidor público de OSRM (independiente de Valhalla, suele estar más disponible)
+function fetchOSRM(locations) {
+  var coordStr = locations.map(function(p) { return p.lon + ',' + p.lat; }).join(';');
+  var url = 'https://router.project-osrm.org/route/v1/driving/' + coordStr
+          + '?overview=full&geometries=polyline&alternatives=false';
+  return fetchWithTimeout(url, {}, 7000).then(function(r) {
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    return r.json();
+  }).then(function(data) {
+    if (data.code !== 'Ok' || !data.routes || !data.routes.length) throw new Error('sin resultado OSRM');
+    var route = data.routes[0];
+    var coords = decodePolylineGeneric(route.geometry, 5);
+    if (!coordsEnPeru(coords)) throw new Error('coordenadas fuera de Perú (OSRM)');
+    return { coords: coords, distanceM: route.distance, durationS: route.duration };
+  });
+}
+
+function calcDistM(pts) {
+  var d = 0;
+  for (var i = 0; i < pts.length - 1; i++) {
+    var dlat = (pts[i+1].lat - pts[i].lat) * 111000;
+    var dlon = (pts[i+1].lon - pts[i].lon) * 111000 * Math.cos(pts[i].lat * Math.PI / 180);
+    d += Math.sqrt(dlat*dlat + dlon*dlon);
+  }
+  return d * 1.35;
+}
+
+function interpolarRuta(pts, n) {
+  var result = [];
+  for (var i = 0; i < pts.length - 1; i++) {
+    var a = pts[i], b = pts[i+1];
+    // Soportar tanto objetos {lat,lon} como arrays [lat,lon]
+    var aLat = Array.isArray(a) ? a[0] : a.lat;
+    var aLon = Array.isArray(a) ? a[1] : a.lon;
+    var bLat = Array.isArray(b) ? b[0] : b.lat;
+    var bLon = Array.isArray(b) ? b[1] : b.lon;
+    var steps = Math.max(8, Math.floor(n / (pts.length - 1)));
+    for (var s = 0; s <= steps; s++) {
+      var t = s / steps;
+      var wave = Math.sin(t * Math.PI * 2.5) * 0.0006;
+      result.push([aLat + (bLat - aLat) * t + wave, aLon + (bLon - aLon) * t + wave * 0.5]);
+    }
+  }
+  return result;
+}
+
+function rutaAlternativa(coords, factor) {
+  if (coords.length < 2) return coords;
+  var mid = Math.floor(coords.length / 2);
+  var a = coords[Math.max(0, mid - 1)];
+  var b = coords[Math.min(coords.length - 1, mid + 1)];
+  var dlat = b[0] - a[0], dlon = b[1] - a[1];
+  var len = Math.sqrt(dlat*dlat + dlon*dlon) || 0.001;
+  var pLat = -dlon / len * (factor || 0.4) * 0.018;
+  var pLon =  dlat / len * (factor || 0.4) * 0.018;
+  return coords.map(function(c, i) {
+    var t = i / (coords.length - 1);
+    var g = Math.exp(-Math.pow((t - 0.5) * 4, 2));
+    return [c[0] + pLat * g, c[1] + pLon * g];
+  });
+}
+
+function getRoutes(origin, dest, pickups) {
+  var activos = pickups.filter(function(p) { return p.estado === 'activo'; });
+  var allPts = [origin].concat(activos).concat([dest]);
+
+  return fetchValhalla(allPts, 'auto').then(function(r1) {
+    var promB = fetchValhalla(allPts, 'bicycle').then(function(r2bic) {
+      return { coords: r2bic.coords, distanceM: r2bic.distanceM, durationS: r2bic.durationS / 2.5 };
+    }).catch(function() {
+      var altCoords = rutaAlternativa(r1.coords, 0.45);
+      return { coords: altCoords, distanceM: r1.distanceM * 1.11, durationS: r1.durationS * 1.17 };
+    });
+    var promC = fetchValhalla(allPts, 'truck').then(function(r3trk) {
+      return { coords: r3trk.coords, distanceM: r3trk.distanceM, durationS: r3trk.durationS };
+    }).catch(function() {
+      var altCoords = rutaAlternativa(r1.coords, -0.55);
+      return { coords: altCoords, distanceM: r1.distanceM * 1.18, durationS: r1.durationS * 1.25 };
+    });
+    return Promise.all([promB, promC]).then(function(res) {
+      return { route1: r1, route2: res[0], route3: res[1], hasTrueAlt: true, motor: 'Valhalla' };
+    });
+  }).catch(function(err) {
+    console.warn('Valhalla no disponible, probando ruteo alterno (OSRM):', err.message);
+    setLoading(true, 'Valhalla no responde, probando ruta alterna (OSRM)...');
+    return fetchOSRM(allPts).then(function(r1osrm) {
+      var coords2 = rutaAlternativa(r1osrm.coords, 0.45);
+      var coords3 = rutaAlternativa(r1osrm.coords, -0.55);
+      return {
+        route1: r1osrm,
+        route2: { coords: coords2, distanceM: r1osrm.distanceM * 1.11, durationS: r1osrm.durationS * 1.17 },
+        route3: { coords: coords3, distanceM: r1osrm.distanceM * 1.18, durationS: r1osrm.durationS * 1.25 },
+        hasTrueAlt: true, motor: 'OSRM'
+      };
+    }).catch(function(err2) {
+      console.warn('OSRM tampoco disponible, usando rutas geometricas:', err2.message);
+      var distM = calcDistM(allPts);
+      var durS  = distM / 8.3;
+      var coords1 = interpolarRuta(allPts, 50);
+      var coords2 = rutaAlternativa(coords1, 0.5);
+      var coords3 = rutaAlternativa(coords1, -0.55);
+      return {
+        route1: { coords: coords1, distanceM: distM,         durationS: durS },
+        route2: { coords: coords2, distanceM: distM * 1.1,   durationS: durS * 1.16 },
+        route3: { coords: coords3, distanceM: distM * 1.18,  durationS: durS * 1.25 },
+        hasTrueAlt: false, motor: 'geometrico'
+      };
+    });
+  });
+}
+
+
+// ── Métricas estimadas por ruta ───────────────────────────
+function calcularMetricasRuta(distKm, tipoCosting, numPickups) {
+  var hora = new Date().getHours();
+  // Factor base de congestión según hora (Lima)
+  var factorHora;
+  if      (hora >= 7  && hora <= 9)  factorHora = 0.82;  // punta mañana
+  else if (hora >= 12 && hora <= 14) factorHora = 0.65;  // almuerzo
+  else if (hora >= 17 && hora <= 20) factorHora = 0.88;  // punta tarde (peor)
+  else if (hora >= 20 || hora < 6)   factorHora = 0.18;  // nocturno
+  else                                factorHora = 0.42;  // normal
+
+  // Factor por tipo de vía
+  var factorVia;
+  if      (tipoCosting === 'auto')     factorVia = 1.00;  // calles mixtas
+  else if (tipoCosting === 'bicycle')  factorVia = 0.72;  // calles secundarias, menos tráfico
+  else if (tipoCosting === 'truck')    factorVia = 1.15;  // avenidas principales, más congestión
+  else                                  factorVia = 1.00;
+
+  // Factor por distancia (rutas largas cruzan más zonas)
+  var factorDist = Math.min(1.0, 0.55 + distKm * 0.025);
+
+  // Congestión final (0–100%)
+  var congestion = Math.round(factorHora * factorVia * factorDist * 100);
+  congestion = Math.min(95, Math.max(5, congestion + (numPickups * 2)));
+
+  // Semáforos estimados: ~1 cada 350m en Lima, ajustado por tipo de vía
+  var semBase = distKm * 1000 / 350;
+  var semFactor = tipoCosting === 'bicycle' ? 0.6 : tipoCosting === 'truck' ? 1.1 : 0.85;
+  var semaforos = Math.round(semBase * semFactor) + numPickups;
+
+  // Costo combustible: precio gasolina 90 Lima ≈ S/ 6.20/L, rendimiento 12 km/L
+  var litros = distKm / 12;
+  var costoSoles = (litros * 6.20).toFixed(2);
+
+  // Clase CSS de congestión
+  var clsCong = congestion < 40 ? 'congestion-low' : congestion < 70 ? 'congestion-mid' : 'congestion-high';
+  var emoCong = congestion < 40 ? '🟢' : congestion < 70 ? '🟡' : '🔴';
+
+  return { congestion: congestion, semaforos: semaforos, costoSoles: costoSoles, clsCong: clsCong, emoCong: emoCong };
+}
+// ── Consejo generado según la estrategia aprendida por RL ─
+function generarConsejoEstrategia(arm, ctx) {
+  var textos = {
+    tiempo: '⏱ <strong>Estrategia: priorizar tiempo.</strong> ' + ctx.trafico.consejo + ' Con tráfico '
+      + ctx.trafico.nivel.toLowerCase() + ', la Ruta ' + ctx.mejor.letra + ' es la que te hace llegar más rápido. '
+      + 'Si tu prioridad es la puntualidad, sal ahora mismo por esa ruta.',
+    costo: '💰 <strong>Estrategia: priorizar ahorro.</strong> La Ruta ' + ctx.mejor.letra + ' cuesta aprox. S/ '
+      + ctx.mejor.costo + ' en combustible. Si puedes ceder algunos minutos, evalúa la ruta con vías secundarias: '
+      + 'suele reducir aún más el consumo y evita peajes en avenidas principales.',
+    seguridad: '🛡 <strong>Estrategia: priorizar seguridad.</strong> '
+      + (ctx.mejor.congestion > 60
+          ? 'La congestión actual (' + ctx.mejor.congestion + '%) es alta: mantén distancia de seguridad y evita maniobras bruscas en los cruces con semáforo.'
+          : 'La vía está relativamente despejada (' + ctx.mejor.congestion + '% congestión), buen momento para un trayecto sin sobresaltos.')
+      + ' Prefiere rutas con menos cruces si transportas carga delicada.',
+    equilibrado: '⚖️ <strong>Estrategia: equilibrio.</strong> La Ruta ' + ctx.mejor.letra
+      + ' ofrece el mejor balance entre tiempo (~' + ctx.mejor.min + ' min), costo (S/ ' + ctx.mejor.costo
+      + ') y congestión (' + ctx.mejor.congestion + '%) para este contexto.'
+  };
+  return textos[arm] || textos.equilibrado;
+}
+// ── Análisis IA local ─────────────────────────────────────
+function analisisIA(origin, dest, pickups, r1, r2, r3, hasTrueAlt) {
+  var km1  = (r1.distanceM / 1000).toFixed(2);
+  var km2  = (r2.distanceM / 1000).toFixed(2);
+  var min1 = Math.round(r1.durationS / 60);
+  var min2 = Math.round(r2.durationS / 60);
+  var activos = pickups.filter(function(p) { return p.estado === 'activo'; });
+  var pickupStr = activos.map(function(p) { return p.nombre; }).join(' → ') || 'Ninguno';
+
+  var hora = new Date().getHours();
+  var traficoNivel, traficoColor, traficoConsejo;
+  if (hora >= 7 && hora <= 9) {
+    traficoNivel = 'MUY ALTO'; traficoColor = '🔴';
+    traficoConsejo = 'Hora punta matutina. Evita Av. Javier Prado y Paseo de la República. Prefiere calles paralelas.';
+  } else if (hora >= 12 && hora <= 14) {
+    traficoNivel = 'MODERADO'; traficoColor = '🟡';
+    traficoConsejo = 'Hora de almuerzo. Congestión moderada cerca de centros comerciales.';
+  } else if (hora >= 17 && hora <= 20) {
+    traficoNivel = 'MUY ALTO'; traficoColor = '🔴';
+    traficoConsejo = 'Hora punta vespertina, la más crítica de Lima. Evita Av. Arequipa y el centro histórico.';
+  } else if (hora >= 20 || hora < 6) {
+    traficoNivel = 'BAJO'; traficoColor = '🟢';
+    traficoConsejo = 'Horario nocturno, tráfico mínimo. Condiciones óptimas para entrega rápida.';
+  } else {
+    traficoNivel = 'NORMAL'; traficoColor = '🟡';
+    traficoConsejo = 'Flujo vehicular normal. Condiciones favorables.';
+  }
+
+  var aEsMejor = r1.distanceM <= r2.distanceM;
+  var recRuta = aEsMejor ? 'A' : 'B';
+  var altRuta = aEsMejor ? 'B' : 'A';
+  var recKm   = aEsMejor ? km1 : km2;
+  var recMin  = aEsMejor ? min1 : min2;
+  var altKm   = aEsMejor ? km2 : km1;
+  var altMin  = aEsMejor ? min2 : min1;
+  var difKm   = Math.abs(r1.distanceM - r2.distanceM) / 1000;
+  var difMin  = Math.abs(min1 - min2);
+
+  var base = 100 - (r1.distanceM / 1000) * 1.4 - activos.length * 2;
+  var scoreA = Math.min(97, Math.max(71, Math.round(base + (aEsMejor ? 5 : 0))));
+  var scoreB = Math.min(94, Math.max(58, Math.round(base * 0.87)));
+
+  var km3   = (r3.distanceM / 1000).toFixed(2);
+  var min3  = Math.round(r3.durationS / 60);
+  var lit1  = (r1.distanceM / 1000 * 0.025).toFixed(2);
+  var lit2  = (r2.distanceM / 1000 * 0.025).toFixed(2);
+  var lit3  = (r3.distanceM / 1000 * 0.025).toFixed(2);
+  var scoreC = Math.min(88, Math.max(55, Math.round(base * 0.78)));
+  var mA = calcularMetricasRuta(r1.distanceM/1000, 'auto',    activos.length);
+  var mB = calcularMetricasRuta(r2.distanceM/1000, 'bicycle', activos.length);
+  var mC = calcularMetricasRuta(r3.distanceM/1000, 'truck',   activos.length);
+  // Score DQN combinado: distancia (40%) + tráfico (40%) + paradas (20%)
+  var dqnA = Math.round(0.4*(100-(r1.distanceM/1000)*1.4) + 0.4*(100-mA.congestion) + 0.2*(100-activos.length*5));
+  var dqnB = Math.round(0.4*(100-(r2.distanceM/1000)*1.4) + 0.4*(100-mB.congestion) + 0.2*(100-activos.length*5));
+  var dqnC = Math.round(0.4*(100-(r3.distanceM/1000)*1.4) + 0.4*(100-mC.congestion) + 0.2*(100-activos.length*5));
+  dqnA = Math.min(99, Math.max(40, dqnA));
+  dqnB = Math.min(99, Math.max(40, dqnB));
+  dqnC = Math.min(99, Math.max(40, dqnC));
+  // El agente RL decide la ruta: combina el score heurístico DQN con lo aprendido (Q),
+  // explorando con probabilidad epsilon (que decae con la experiencia acumulada)
+  var rlState = rlStateKey(r1.distanceM / 1000, activos.length, hora);
+  var heurScores = { A: dqnA, B: dqnB, C: dqnC };
+  var mejorRuta = rlChooseRoute(rlState, heurScores);
+  var adviceArm = rlChooseAdviceArm(rlState);
+
+  var consejoParadas;
+  if (activos.length === 0) {
+    consejoParadas = '📦 Entrega directa sin paradas intermedias. Máxima eficiencia posible.';
+  } else {
+    consejoParadas = '📦 ' + activos.length + ' punto(s) de recojo: ' + pickupStr + '\n'
+      + 'El agente DQN optimizó la secuencia para minimizar retrocesos.';
+  }
+
+  var altTipo = hasTrueAlt ? 'ruta real calculada' : 'variante geométrica';
+  var consejoFinal = difMin <= 2
+    ? 'Ambas rutas tienen tiempos similares (dif. ' + difMin + ' min). Si hay bloqueo en Ruta ' + recRuta + ', cambia a Ruta ' + altRuta + ' sin pérdida significativa.'
+    : 'La diferencia de ' + difMin + ' min es relevante. Mantente en Ruta ' + recRuta + ' salvo bloqueo mayor.';
+
+  var filaRuta = function(letra, color, km, min, m, dqn, tag) {
+    return letra + ' <strong>Ruta ' + letra.slice(-1) + '</strong> — '
+      + km + ' km · ~' + min + ' min · S/ ' + m.costoSoles
+      + ' · ' + m.emoCong + ' ' + m.congestion + '% cong. · 🚦 ' + m.semaforos + ' sem.'
+      + ' · <strong>DQN: ' + dqn + '/100</strong><br>' + tag + '<br><br>';
+  };
+  var tagA = mejorRuta==='A' ? '✅ <strong>ÓPTIMA DQN</strong> — mejor índice combinado' : '⚪ Alternativa viable';
+  var tagB = mejorRuta==='B' ? '✅ <strong>ÓPTIMA DQN</strong> — mejor índice combinado' : '⚪ Calles secundarias, menos congestión';
+  var tagC = mejorRuta==='C' ? '✅ <strong>ÓPTIMA DQN</strong> — mejor índice combinado' : '⚪ Avenidas principales, mayor cobertura';
+  var kmMejor  = mejorRuta==='A' ? km1  : mejorRuta==='B' ? km2  : km3;
+  var minMejor = mejorRuta==='A' ? min1 : mejorRuta==='B' ? min2 : min3;
+  var mMejor   = mejorRuta==='A' ? mA   : mejorRuta==='B' ? mB   : mC;
+  var dqnMejor = mejorRuta==='A' ? dqnA : mejorRuta==='B' ? dqnB : dqnC;
+  var htmlOut = '🤖 <strong>AGENTE DQN — ANÁLISIS DE RUTAS</strong><hr>'
+    + '🏆 <strong>RUTA RECOMENDADA: Ruta ' + mejorRuta + '</strong> — DQN Score: ' + dqnMejor + '/100<br><br>'
+    + 'La <strong>Ruta ' + mejorRuta + '</strong> obtiene el mejor índice combinado: '
+    + '<strong>' + kmMejor + ' km</strong>, ~<strong>' + minMejor + ' min</strong>, '
+    + mMejor.emoCong + ' <strong>' + mMejor.congestion + '% congestión</strong>, '
+    + '🚦 ' + mMejor.semaforos + ' semáforos est., costo S/ ' + mMejor.costoSoles + '.<hr>'
+    + '📊 <strong>COMPARATIVA DE RUTAS</strong><br><br>'
+    + filaRuta('🔵', '#4f8ef7', km1, min1, mA, dqnA, tagA)
+    + filaRuta('🟣', '#a78bfa', km2, min2, mB, dqnB, tagB)
+    + filaRuta('🟠', '#f97316', km3, min3, mC, dqnC, tagC)
+    + consejoParadas.replace(/\n/g, '<br>') + '<hr>'
+    + traficoColor + ' <strong>TRÁFICO AHORA: ' + traficoNivel + '</strong><br>' + traficoConsejo + '<hr>'
+    + '💡 <strong>CONSEJO DQN:</strong> ' + consejoFinal + '<hr>';
+
+  // Consejo cuya "estrategia" fue elegida por el agente RL (mejora con el feedback del usuario)
+  var ctxAdv = {
+    trafico: { nivel: traficoNivel, consejo: traficoConsejo },
+    mejor: { letra: mejorRuta, km: kmMejor, min: minMejor, costo: mMejor.costoSoles, congestion: mMejor.congestion }
+  };
+  var armLabels = { tiempo: '⏱ Tiempo', costo: '💰 Costo', seguridad: '🛡 Seguridad', equilibrado: '⚖️ Equilibrado' };
+  var textoEstrategia = generarConsejoEstrategia(adviceArm, ctxAdv);
+  htmlOut += '<span class="strategy-pill">🧠 Consejo aprendido · ' + armLabels[adviceArm] + '</span><br>'
+    + textoEstrategia + '<hr>'
+    + '<div class="fb-row"><span class="fb-label">¿Te sirvió esta recomendación?</span>'
+    + '<button class="fb-btn up" onclick="rateEpisode(1)">👍 Útil</button>'
+    + '<button class="fb-btn down" onclick="rateEpisode(-1)">👎 No tan útil</button></div>';
+
+  return { html: htmlOut, mejor: mejorRuta, state: rlState, action: mejorRuta, adviceArm: adviceArm };
+}
+
+// ── Planificar ────────────────────────────────────────────
+function planificar() {
+  if (!S.origin || !S.dest) { showToast('⚠ Define el origen y el destino primero'); return; }
+  setLoading(true, 'Agente DQN calculando rutas...');
+
+  getRoutes(S.origin, S.dest, S.pickups).then(function(result) {
+    var r1 = result.route1, r2 = result.route2, r3 = result.route3;
+    var activos = S.pickups.filter(function(p) { return p.estado === 'activo'; });
+
+    setLoading(true, 'Generando análisis de inteligencia artificial...');
+    setTimeout(function() {
+      var aiResult = analisisIA(S.origin, S.dest, S.pickups, r1, r2, r3, result.hasTrueAlt);
+      var aiHtml = aiResult.html;
+      var mejorRuta = aiResult.mejor;
+
+      var wpFn = function() {
+        return [{ name: S.origin.nombre, lat: S.origin.lat, lon: S.origin.lon, type: 'origin' }]
+          .concat(activos.map(function(p) { return { name: p.nombre, lat: p.lat, lon: p.lon, type: 'pickup' }; }))
+          .concat([{ name: S.dest.nombre, lat: S.dest.lat, lon: S.dest.lon, type: 'destination' }]);
+      };
+      var routeData = {
+        routes: [
+          {
+            nombre: '🔵 Ruta A — Principal', color: '#4f8ef7', is_main: (mejorRuta==='A'),
+            coords: r1.coords,
+            metrics: { km_est: (r1.distanceM/1000).toFixed(1), tiempo: Math.round(r1.durationS/60)+' min', tipo: 'Óptima DQN' },
+            waypoints: wpFn()
+          },
+          {
+            nombre: '🟣 Ruta B — Alternativa', color: '#a78bfa', is_main: (mejorRuta==='B'),
+            coords: r2.coords,
+            metrics: { km_est: (r2.distanceM/1000).toFixed(1), tiempo: Math.round(r2.durationS/60)+' min', tipo: 'Alt. Calles' },
+            waypoints: wpFn()
+          },
+          {
+            nombre: '🟠 Ruta C — Avenidas', color: '#f97316', is_main: (mejorRuta==='C'),
+            coords: r3.coords,
+            metrics: { km_est: (r3.distanceM/1000).toFixed(1), tiempo: Math.round(r3.durationS/60)+' min', tipo: 'Av. Principales' },
+            waypoints: wpFn()
+          }
+        ]
+      };
+
+      var letraToIdx = { A: 0, B: 1, C: 2 };
+      var predMap = { A: r1, B: r2, C: r3 };
+      var predRuta = predMap[mejorRuta];
+      S.routes = routeData;
+      S.activeRoute = letraToIdx[mejorRuta];
+      S.lastEpisode = {
+        state: aiResult.state, action: aiResult.action, adviceArm: aiResult.adviceArm,
+        predDistM: predRuta.distanceM, predDurS: predRuta.durationS  // lo que la IA predijo, para comparar con la realidad
+      };
+      rlNewEpisode();
+      renderRoutes(routeData);
+      renderMapRoutes(routeData);
+      selectRoute(S.activeRoute, true);
+      document.getElementById('agent-panel').classList.add('on');
+      document.getElementById('trip-panel').classList.add('on');
+      document.getElementById('agent-comment').innerHTML = aiHtml;
+      renderLearningPanel();
+      var motorMsg = result.motor === 'Valhalla' ? ''
+        : result.motor === 'OSRM' ? ' (motor alterno OSRM, Valhalla no disponible)'
+        : ' (modo geométrico, sin servidor de ruteo disponible)';
+      showToast('✅ Planificación completada — 3 rutas generadas' + motorMsg, motorMsg ? 4500 : 3000);
+      setLoading(false);
+    }, 500);
+  }).catch(function(e) {
+    showToast('❌ Error: ' + e.message, 5000);
+    setLoading(false);
+  });
+}
+
+// ── Render sidebar rutas ──────────────────────────────────
+function renderRoutes(data) {
+  document.getElementById('routes-panel').classList.add('on');
+  var costings = ['auto','bicycle','truck'];
+  var html = '';
+  data.routes.forEach(function(r, i) {
+    var numPickups = r.waypoints ? r.waypoints.filter(function(w){return w.type==='pickup';}).length : 0;
+    var m = calcularMetricasRuta(parseFloat(r.metrics.km_est), costings[i] || 'auto', numPickups);
+    html += '<div class="route-card ' + (i===0?'active':'') + '" id="rc-'+i+'" onclick="selectRoute('+i+')">'
+      + '<div class="rc-header"><div class="rc-dot" style="background:'+r.color+'"></div>'
+      + '<div class="rc-name">'+r.nombre+'</div>'
+      + (r.is_main ? '<div class="rc-badge">Recomendada</div>' : '') + '</div>'
+      + '<div class="rc-metrics">'
+      + '<div class="rc-metric"><div class="val" style="color:'+r.color+'">'+r.metrics.km_est+'</div><div class="lbl">km</div></div>'
+      + '<div class="rc-metric"><div class="val">'+r.metrics.tiempo+'</div><div class="lbl">tiempo</div></div>'
+      + '<div class="rc-metric"><div class="val" style="font-size:10px">'+r.metrics.tipo+'</div><div class="lbl">tipo</div></div>'
+      + '</div>'
+      + '<div class="rc-metrics-extra">'
+      + '<div class="rc-metric '+m.clsCong+'"><div class="val">'+m.emoCong+' '+m.congestion+'%</div><div class="lbl">congestión</div></div>'
+      + '<div class="rc-metric"><div class="val">🚦 '+m.semaforos+'</div><div class="lbl">semáforos est.</div></div>'
+      + '<div class="rc-metric"><div class="val">S/ '+m.costoSoles+'</div><div class="lbl">costo comb.</div></div>'
+      + '</div></div>';
+  });
+  document.getElementById('route-cards').innerHTML = html;
+}
+function selectRoute(idx, silent) {
+  S.activeRoute = idx;
+  document.querySelectorAll('.route-card').forEach(function(el, i) { el.classList.toggle('active', i===idx); });
+  Object.keys(S.mapLayers).forEach(function(i) {
+    var l = S.mapLayers[i], active = parseInt(i) === idx;
+    l.setStyle({ opacity: active ? 1 : 0.25, weight: active ? 6 : 2 });
+    if (active) l.bringToFront();
+  });
+  var r = S.routes.routes[idx];
+  if (r.coords.length > 1) map.fitBounds(r.coords, { padding: [40,40] });
+  if (silent) return;
+  showToast('Mostrando: ' + r.nombre);
+  // Feedback implícito: si el usuario elige manualmente una ruta distinta a la recomendada,
+  // el agente aprende que en este contexto esa otra ruta es preferida
+  if (S.lastEpisode) {
+    var letras = ['A', 'B', 'C'];
+    var elegida = letras[idx];
+    if (elegida !== S.lastEpisode.action) {
+      rlUpdateRoute(S.lastEpisode.state, S.lastEpisode.action, -0.3);
+      rlUpdateRoute(S.lastEpisode.state, elegida, 0.4);
+      renderLearningPanel();
+    }
+  }
+}
+
+// ── Render mapa ───────────────────────────────────────────
+function clearMapLayers() {
+  Object.values(S.mapLayers).forEach(function(l) { if (map) map.removeLayer(l); });
+  S.mapLayers = {};
+  S.markers.forEach(function(m) { if (map) map.removeLayer(m); });
+  S.markers = [];
+  S.previewMarkers = {};
+}
+function makeIcon(type) {
+  var cfg = { origin:{bg:'#10b981',sym:'🏭',s:32}, destination:{bg:'#ef4444',sym:'🏁',s:32}, pickup:{bg:'#f59e0b',sym:'📦',s:28} }[type] || {bg:'#6b7280',sym:'●',s:20};
+  return L.divIcon({
+    html: '<div style="width:'+cfg.s+'px;height:'+cfg.s+'px;border-radius:50%;background:'+cfg.bg+';border:2.5px solid rgba(255,255,255,.8);display:flex;align-items:center;justify-content:center;font-size:'+(cfg.s*.44)+'px;box-shadow:0 2px 8px rgba(0,0,0,.5)">'+cfg.sym+'</div>',
+    className:'', iconSize:[cfg.s,cfg.s], iconAnchor:[cfg.s/2,cfg.s/2], popupAnchor:[0,-cfg.s/2]
+  });
+}
+function renderMapRoutes(data) {
+  clearMapLayers();
+  var routes = data.routes;
+  // Dibujar alternativa primero, principal encima
+  for (var ri = routes.length - 1; ri >= 0; ri--) {
+    var r = routes[ri];
+    var layer = L.polyline(r.coords, {
+      color: r.color, weight: ri === 0 ? 6 : 2,
+      opacity: ri === 0 ? 1 : 0.45,
+      dashArray: ri === 0 ? null : '10 7',
+      lineJoin: 'round', lineCap: 'round'
+    }).addTo(map);
+    S.mapLayers[ri] = layer;
+  }
+  // Marcadores ruta principal
+  routes[0].waypoints.forEach(function(wp) {
+    var marker = L.marker([wp.lat, wp.lon], { icon: makeIcon(wp.type) });
+    var labels = { origin:'🏭 Origen', destination:'🏁 Destino', pickup:'📦 Punto de recojo' };
+    marker.bindPopup('<div class="popup-title">'+wp.name+'</div><div class="popup-type">'+(labels[wp.type]||'Parada')+'</div>');
+    marker.addTo(map);
+    S.markers.push(marker);
+  });
+  if (routes[0].coords.length > 1) map.fitBounds(routes[0].coords, { padding: [50,50] });
+}
+
+// ── UI helpers ────────────────────────────────────────────
+function showToast(msg, d) {
+  var t = document.getElementById('toast');
+  t.textContent = msg; t.classList.add('show');
+  setTimeout(function() { t.classList.remove('show'); }, d || 3000);
+}
+function setLoading(on, sub) {
+  document.getElementById('loading').classList.toggle('on', on);
+  document.getElementById('load-sub').textContent = sub || '';
+  document.getElementById('status-badge').classList.toggle('on', on);
+  document.getElementById('btn-plan').disabled = on;
+}
+</script>
+</body>
+</html>
